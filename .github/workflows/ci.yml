@@ -1,0 +1,58 @@
+name: ci
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Format check
+        run: cargo fmt -- --check
+
+      - name: Clippy
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test --locked --all-targets
+
+  release:
+    name: release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: test
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build release
+        run: cargo build --release --locked
+
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory staging | Out-Null
+          Copy-Item target/release/linkcopy.exe staging/
+          Copy-Item docs staging/ -Recurse
+          Compress-Archive -Path staging/* -DestinationPath "linkcopy-${{ github.ref_name }}-windows-x86_64.zip"
+
+      - name: Upload release asset
+        uses: softprops/action-gh-release@v3
+        with:
+          files: linkcopy-${{ github.ref_name }}-windows-x86_64.zip
+          generate_release_notes: true
